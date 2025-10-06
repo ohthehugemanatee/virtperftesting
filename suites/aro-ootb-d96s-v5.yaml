@@ -1,0 +1,88 @@
+global:
+  output_dir: /results
+  repetitions: 3
+  namespace: perf-tests
+  runtime_kinds: ["pod","vm"]
+  storage_class_block: "odf-rbd"
+  storage_class_file: "odf-cephfs"
+  node_selector:
+    "sku.family": "dsv5-large"                     # D96s v5 workers
+workloads:
+  - name: sysbench-cpu
+    kind: sysbench
+    params: { time: 180, threads: [1,2,4,8,16,32,64,96,128,192] }
+    runtime_kinds: ["pod","vm"]
+
+  - name: stream
+    kind: stream
+    params: { array_size_mb: 1024, threads: [1,2,4,8,16,32,64,96,128,192] }
+    runtime_kinds: ["pod","vm"]
+
+  - name: uperf
+    kind: uperf
+    params:
+      proto: ["tcp","udp"]
+      test_types: ["stream","rr"]
+      message_sizes: ["64","512","4096","65536"]
+      duration: 90
+      pairings: "intra-node,intra-zone"
+    runtime_kinds: ["pod","vm"]
+
+  - name: fio-rand4k
+    kind: fio
+    params:
+      rw: "randrw"
+      rwmixread: 70
+      bs: "4k"
+      iodepth: [1,4,16,64,128]
+      numjobs: [4,8,16,32]
+      size: "64Gi"
+      runtime: 180
+      storage_class: "odf-rbd"
+      pvc_mode: "ReadWriteOnce"
+    runtime_kinds: ["pod","vm"]
+
+  - name: fio-seq128k
+    kind: fio
+    params:
+      rw: "readwrite"
+      bs: "128k"
+      iodepth: [8,32,64]
+      numjobs: [4,8,16]
+      size: "64Gi"
+      runtime: 180
+      storage_class: "odf-rbd"
+    runtime_kinds: ["pod","vm"]
+
+  - name: smallfile
+    kind: smallfile
+    params: { files: 20000, threads: 32, file_size_kb: 4, storage_class: "odf-cephfs" }
+    runtime_kinds: ["pod","vm"]
+
+  - name: pgbench
+    kind: pgbench
+    params: { scale: [100,300], clients: [16,64,128], time: 300, storage_class: "odf-rbd" }
+    runtime_kinds: ["pod","vm"]
+
+  - name: hammerdb-tprocC
+    kind: hammerdb
+    params: { db: "postgres", warehouses: [100,300,600], users: [32,64,128,256], duration: 600, storage_class: "odf-rbd" }
+    runtime_kinds: ["pod","vm"]
+
+  - name: nginx-wrk
+    kind: http
+    tool: "wrk"
+    params: { connections: [256,512,1024], threads: 32, duration: 180 }
+    runtime_kinds: ["pod","vm"]
+
+  - name: redis-memtier
+    kind: memtier
+    params:
+      protocol: "redis"
+      clients: [100,200,400]
+      threads: [8,16]
+      ratio: "1:10"
+      key_maximum: 1000000
+      data_size: 128
+      test_time: 240
+    runtime_kinds: ["pod","vm"]

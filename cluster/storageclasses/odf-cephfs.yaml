@@ -1,0 +1,10 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: odf-cephfs
+provisioner: openshift-storage.cephfs.csi.ceph.com
+parameters:
+  csi.storage.k8s.io/fstype: xfs
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+volumeBindingMode: Immediate

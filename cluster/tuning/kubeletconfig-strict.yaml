@@ -1,0 +1,18 @@
+apiVersion: machineconfiguration.openshift.io/v1
+kind: KubeletConfig
+metadata:
+  name: strict-kubelet
+spec:
+  machineConfigPoolSelector:
+    matchLabels:
+      pools.operator.machineconfiguration.openshift.io/worker: ""
+  kubeletConfig:
+    cpuManagerPolicy: "static"
+    topologyManagerPolicy: "single-numa-node"
+    reservedSystemCPUs: "0-1"
+    systemReserved:
+      cpu: "500m"
+      memory: "1Gi"
+    kubeReserved:
+      cpu: "500m"
+      memory: "1Gi"

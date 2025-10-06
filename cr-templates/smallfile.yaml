@@ -1,0 +1,13 @@
+apiVersion: ripsaw.cloudbulldozer.io/v1alpha1
+kind: Benchmark
+metadata:
+  name: smallfile-cephfs
+  namespace: perf-tests
+spec:
+  workload:
+    name: smallfile
+    args:
+      storageclass: odf-cephfs
+      files: 20000
+      threads: 32
+      file_size_kb: 4

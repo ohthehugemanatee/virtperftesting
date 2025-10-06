@@ -1,0 +1,54 @@
+name: manual-perf
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "ootb or strict"
+        required: true
+        default: "ootb"
+      family:
+        description: "v5 or v6 (D96s)"
+        required: true
+        default: "v5"
+
+jobs:
+  run:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login to cluster
+        run: oc login "$OC_API" --token="$OC_TOKEN" --insecure-skip-tls-verify
+      - name: Prepare namespace & operator
+        run: |
+          ./scripts/prepare-namespace.sh
+          oc apply -f https://raw.githubusercontent.com/cloud-bulldozer/benchmark-operator/master/deploy/operator.yaml
+      - name: Apply storageclasses (idempotent)
+        run: |
+          oc apply -f cluster/storageclasses/odf-rbd.yaml || true
+          oc apply -f cluster/storageclasses/odf-cephfs.yaml || true
+      - name: Prepare profile
+        run: |
+          if [ "${{ github.event.inputs.profile }}" = "strict" ]; then
+            ./scripts/prepare-strict.sh
+          else
+            ./scripts/prepare-ootb.sh
+          fi
+      - name: Run suite
+        env:
+          PROFILE: ${{ github.event.inputs.profile }}
+          FAMILY:  ${{ github.event.inputs.family }}
+        run: |
+          mkdir -p results
+          make PROFILE=$PROFILE FAMILY=$FAMILY run
+      - name: Prometheus snapshot
+        run: ./scripts/prom-snapshot.sh
+      - name: Build seller pack
+        run: ./scripts/seller-pack.sh results
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-${{ github.event.inputs.profile }}-${{ github.event.inputs.family }}
+          path: |
+            results/**
+            seller-pack/**

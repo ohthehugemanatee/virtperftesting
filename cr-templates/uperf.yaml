@@ -1,0 +1,15 @@
+apiVersion: ripsaw.cloudbulldozer.io/v1alpha1
+kind: Benchmark
+metadata:
+  name: uperf-vm-vs-pod
+  namespace: perf-tests
+spec:
+  workload:
+    name: uperf
+    args:
+      serviceip: false
+      protos: ["tcp","udp"]
+      test_types: ["stream","rr"]
+      sizes: ["64","512","4096","65536"]
+      duration: 90
+      samples: 1

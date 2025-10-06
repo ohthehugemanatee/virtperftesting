@@ -1,0 +1,14 @@
+apiVersion: ripsaw.cloudbulldozer.io/v1alpha1
+kind: Benchmark
+metadata:
+  name: hammerdb-tprocC
+  namespace: perf-tests
+spec:
+  workload:
+    name: hammerdb
+    args:
+      db: postgres
+      warehouses: 300
+      users: 256
+      duration: 600
+      storageclass: odf-rbd

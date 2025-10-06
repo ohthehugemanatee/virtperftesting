@@ -1,0 +1,11 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: odf-rbd
+provisioner: openshift-storage.rbd.csi.ceph.com
+parameters:
+  csi.storage.k8s.io/fstype: xfs
+  imageFeatures: layering
+allowVolumeExpansion: true
+reclaimPolicy: Delete
+volumeBindingMode: Immediate

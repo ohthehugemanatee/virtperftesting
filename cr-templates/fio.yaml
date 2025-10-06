@@ -1,0 +1,17 @@
+apiVersion: ripsaw.cloudbulldozer.io/v1alpha1
+kind: Benchmark
+metadata:
+  name: fio-odf-rbd
+  namespace: perf-tests
+spec:
+  workload:
+    name: fio_distributed
+    args:
+      storageclass: odf-rbd
+      bs: ["4k","128k"]
+      rw: ["randrw","readwrite"]
+      rwmixread: [70]
+      iodepth: [1,4,16,64,128]
+      jobs: [4,8,16,32]
+      filesizes: ["64Gi"]
+      runtime: 180

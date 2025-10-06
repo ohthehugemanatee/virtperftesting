@@ -1,0 +1,37 @@
+# ODF Sizing Config
+#
+# Fill in your target workload and platform caps.
+# All rates are per-second. Throughput is in MB/s (MiB acceptable; tool treats it as MB/s).
+#
+# Notes:
+# - Set vm_disk_iops_cap and vm_disk_throughput_cap to the per-VM *disk* caps for your worker VM size.
+#   (See Azure docs for D96s v5/v6. Leave headroom to avoid throttling.)
+# - Set vm_nic_throughput_cap to the per-VM NIC cap in MB/s (e.g., 50 Gbps ≈ 6_250 MB/s).
+# - Ceph replication multiplies backend IO by the replication factor.
+# - Typically choose 1 OSD per disk (recommended).
+
+workload_target:
+  aggregate_iops: 100000         # Total client IOPS target across the cluster (4k mix)
+  aggregate_throughput_mb_s: 2500  # Total client throughput target (MB/s)
+
+ceph:
+  replication: 3                 # 3-way replication
+
+cluster:
+  odf_worker_nodes: 6            # Number of ODF (Ceph) worker nodes
+
+disk:
+  # Choose a disk class and its per-disk caps (effective, after overhead)
+  class: "premium-ssd-v2"        # "premium-ssd-v2" or "ultra"
+  per_disk_iops_cap: 20000       # e.g., Premium SSD v2 per-disk configured cap
+  per_disk_throughput_mb_s: 400  # e.g., Premium SSD v2 per-disk configured cap
+  osds_per_disk: 1               # usually 1
+
+vm_caps:
+  vm_disk_iops_cap: 200000       # Per-VM IOPS cap
+  vm_disk_throughput_mb_s: 3000  # Per-VM disk throughput cap (MB/s)
+  vm_nic_throughput_mb_s: 6250   # Per-VM NIC cap (MB/s); 50 Gbps ~ 6250 MB/s
+
+safety:
+  iops_headroom: 0.8             # use only 80% of any cap (disk/VM) to avoid throttling
+  tput_headroom: 0.8

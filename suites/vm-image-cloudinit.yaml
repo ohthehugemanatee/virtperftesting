@@ -1,0 +1,17 @@
+# Base packages & tuning inside guest VMs
+user: cloud-user
+packages:
+  - fio
+  - sysbench
+  - gcc
+  - make
+  - numactl
+  - wrk
+  - redis
+  - postgresql
+  - tuned
+  - tuned-profiles-virtual-guest
+runcmd:
+  - tuned-adm profile virtual-guest
+  - sysctl -w vm.swappiness=1
+  - systemctl enable --now chronyd
