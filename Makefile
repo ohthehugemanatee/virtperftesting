@@ -24,3 +24,7 @@ ootb:
 
 seller-pack:
 	./scripts/seller-pack.sh results
+
+prep:
+	@echo "Preparing fresh cluster for perf tests... This can take up to 30 minutes. Go have a sandwich."
+	./scripts/prep-cluster.sh
