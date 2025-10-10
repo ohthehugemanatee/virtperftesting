@@ -138,8 +138,9 @@ make prep
 
 This requires only `oc` access and `jq`, and does the following:
 
-* Upgrades the cluster to a target OCP version (configurable via `$TARGET_OCP_VERSION`).
-* Ensures a minimum worker pool size of the desired VM SKU (defaults to 6 × D96s v5).
+* Upgrades the cluster to a target OCP version (defaults to 4.18.25 and ODF stable-4.18) (configurable via `$TARGET_OCP_VERSION` and `$ODF_CHANNEL`).
+* Ensures a minimum worker pool size of the desired VM SKU (defaults to 6 × D96s v5) (configurable via `$COMPUTE_MACHINESET` for the SKU and `$COMPUTE_COUNT` for the size)
+* Optionally ensures a separate worker pool size for ODF nodes (defaults to yes with 3 x D16s_v5) (configurable via `$USE_ODF_POOL` true/false, `$ODF_MACHINESET`, and `$ODF_NODE_COUNT`)
 * Installs and configures ODF (Ceph RBD + CephFS).
 * Installs and configures OpenShift Virtualization (CNV).
 * Ensures wrapper StorageClasses (`odf-rbd`, `odf-cephfs`) exist.
