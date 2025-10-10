@@ -16,6 +16,40 @@ CNV_CHANNEL="${CNV_CHANNEL:-stable}"
 NS_ODF="openshift-storage"
 NS_CNV="openshift-cnv"
 
+create_machineset_for_sku () {
+  local sku="$1"
+  local replicas="$2"
+  local ns="openshift-machine-api"
+  local template_ms
+
+  echo "Creating MachineSet for SKU $sku..."
+
+  # Pick the first existing worker machineset as template
+  template_ms=$(oc get machinesets -n $ns -o jsonpath='{.items[0].metadata.name}')
+  if [[ -z "$template_ms" ]]; then
+    echo "ERROR: No template MachineSet found."
+    exit 1
+  fi
+
+  # Dump template, change name and vmSize
+  newname="${template_ms%-*}-${sku,,}"
+  oc get machineset "$template_ms" -n $ns -o json \
+    | jq --arg name "$newname" --arg sku "$sku" '
+        .metadata.name = $name
+        | .spec.selector.matchLabels."machine.openshift.io/cluster-api-machineset" = $name
+        | .spec.template.metadata.labels."machine.openshift.io/cluster-api-machineset" = $name
+        | .spec.template.spec.providerSpec.value.vmSize = $sku
+        | .spec.replicas = 0
+      ' \
+    | oc apply -n $ns -f -
+
+  echo "New MachineSet $newname created for SKU $sku."
+  echo "Scaling to $replicas replicas..."
+  oc scale machineset "$newname" -n $ns --replicas="$replicas"
+
+  echo "$newname"
+}
+
 # Ensure oc is logged in
 oc whoami >/dev/null
 
@@ -33,28 +67,35 @@ MS=$(oc get machinesets -n openshift-machine-api -o json \
       | .metadata.name')
 
 if [[ -z "$MS" ]]; then
-  echo "ERROR: No MachineSet found for SKU $COMPUTE_MACHINESET"
-  exit 1
+  MS=$(create_machineset_for_sku "$COMPUTE_MACHINESET" "$COMPUTE_COUNT")
+else
+  oc scale machineset "$MS" -n openshift-machine-api --replicas="$COMPUTE_COUNT"
 fi
 
-oc scale machineset "$MS" -n openshift-machine-api --replicas="$COMPUTE_COUNT"
 oc wait node --for=condition=Ready --timeout=30m \
   -l "node.kubernetes.io/instance-type=$COMPUTE_MACHINESET"
 
 if [[ "$USE_ODF_POOL" == "true" ]]; then
   echo "=== STEP 2b: Ensure ODF node pool ($ODF_MACHINESET, $ODF_NODE_COUNT nodes) ==="
-  ODF_MS=$(oc get machinesets -n openshift-machine-api -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep "$ODF_MACHINESET" || true)
-  if [[ -z "$ODF_MS" ]]; then
-    echo "WARNING: No MachineSet found for $ODF_MACHINESET. You may need to create one manually."
+  ODF_MS=$(oc get machinesets -n openshift-machine-api -o json \
+    | jq -r --arg sku "$ODF_MACHINESET" '
+        .items[]
+        | select(.spec.template.spec.providerSpec.value.vmSize == $sku)
+        | .metadata.name')
+  
+  if [[ -z "$MS" ]]; then
+    MS=$(create_machineset_for_sku "$ODF_MACHINESET" "$ODF_COUNT")
   else
-    oc scale machineset "$ODF_MS" -n openshift-machine-api --replicas="$ODF_NODE_COUNT"
-    oc wait node --for=condition=Ready --timeout=30m -l "node.kubernetes.io/instance-type=$ODF_MACHINESET"
-    # Label and taint nodes for ODF
-    for n in $(oc get nodes -l node.kubernetes.io/instance-type=$ODF_MACHINESET -o name); do
-      oc label $n odf=true --overwrite
-      oc adm taint nodes $n dedicated=odf:NoSchedule --overwrite || true
-    done
+    oc scale machineset "$MS" -n openshift-machine-api --replicas="$ODF_COUNT"
   fi
+  
+  oc wait node --for=condition=Ready --timeout=30m \
+    -l "node.kubernetes.io/instance-type=$ODF_MACHINESET"
+    # Label and taint nodes for ODF
+  for n in $(oc get nodes -l node.kubernetes.io/instance-type=$ODF_MACHINESET -o name); do
+    oc label $n odf=true --overwrite
+    oc adm taint nodes $n dedicated=odf:NoSchedule --overwrite || true
+  done
 fi
 
 echo "=== STEP 3: Install ODF Operator and StorageSystem ==="
