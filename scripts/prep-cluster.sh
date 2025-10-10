@@ -16,6 +16,27 @@ CNV_CHANNEL="${CNV_CHANNEL:-stable}"
 NS_ODF="openshift-storage"
 NS_CNV="openshift-cnv"
 
+ASK_ALL=false
+
+confirm() {
+  local prompt="$1"
+  if [ "$ASK_ALL" = true ]; then
+    return 0
+  fi
+
+  while true; do
+    read -rp "$prompt [y/n/a/q]: " ans
+    case "$ans" in
+      [Yy]) return 0 ;;
+      [Nn]) return 1 ;;
+      [Aa]) ASK_ALL=true; return 0 ;;
+      [Qq]) echo "Aborting."; exit 1 ;;
+      *) echo "Please enter y (yes), n (no), a (all), or q (quit)." ;;
+    esac
+  done
+}
+
+
 create_machineset_for_sku () {
   local sku="$1"
   local replicas="$2"
@@ -54,7 +75,9 @@ create_machineset_for_sku () {
 oc whoami >/dev/null
 
 echo "=== STEP 1: Upgrade cluster to target version $TARGET_OCP_VERSION ==="
-oc adm upgrade --to="$TARGET_OCP_VERSION" || true
+if confirm "Automatically upgrade cluster to target version $TARGET_OCP_VERSION ?"; then
+  oc adm upgrade --to="$TARGET_OCP_VERSION" || true
+fi
 
 echo "=== STEP 2: Scale worker nodes to $COMPUTE_COUNT of $COMPUTE_MACHINESET ==="
 # Ensure jq is available
@@ -67,9 +90,13 @@ MS=$(oc get machinesets -n openshift-machine-api -o json \
       | .metadata.name')
 
 if [[ -z "$MS" ]]; then
-  MS=$(create_machineset_for_sku "$COMPUTE_MACHINESET" "$COMPUTE_COUNT")
+  if confirm "Automatically create machineset for $COMPUTE_COUNT VMs with SKU $COMPUTE_MACHINESET ?"; then
+    MS=$(create_machineset_for_sku "$COMPUTE_MACHINESET" "$COMPUTE_COUNT")
+  fi
 else
-  oc scale machineset "$MS" -n openshift-machine-api --replicas="$COMPUTE_COUNT"
+  if confirm "Automatically scale machineset $MS to $COMPUTE_COUNT?"; then
+    oc scale machineset "$MS" -n openshift-machine-api --replicas="$COMPUTE_COUNT"
+  fi
 fi
 
 oc wait node --for=condition=Ready --timeout=30m \
@@ -83,10 +110,15 @@ if [[ "$USE_ODF_POOL" == "true" ]]; then
         | select(.spec.template.spec.providerSpec.value.vmSize == $sku)
         | .metadata.name')
   
-  if [[ -z "$MS" ]]; then
-    MS=$(create_machineset_for_sku "$ODF_MACHINESET" "$ODF_COUNT")
+  if [[ -z "$ODF_MS" ]]; then
+
+  if confirm "Automatically create machineset for $ODF_COUNT VMs with SKU $ODF_MACHINESET ?"; then
+    ODF_MS=$(create_machineset_for_sku "$ODF_MACHINESET" "$ODF_COUNT")
+  fi
   else
-    oc scale machineset "$MS" -n openshift-machine-api --replicas="$ODF_COUNT"
+    if confirm "Automatically scale machineset $ODF_MS to $ODF_COUNT ?"; then
+      oc scale machineset "$MS" -n openshift-machine-api --replicas="$ODF_COUNT"
+    fi
   fi
   
   oc wait node --for=condition=Ready --timeout=30m \
@@ -99,7 +131,8 @@ if [[ "$USE_ODF_POOL" == "true" ]]; then
 fi
 
 echo "=== STEP 3: Install ODF Operator and StorageSystem ==="
-oc apply -f - <<EOF
+if confirm "Automatically install ODF Operator and StorageSystem?"; then
+  oc apply -f - <<EOF
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
@@ -122,11 +155,11 @@ spec:
   sourceNamespace: openshift-marketplace
 EOF
 
-echo "Waiting for ODF operator pods..."
-oc rollout status deployment/odf-operator-controller-manager -n $NS_ODF --timeout=15m || true
+  echo "Waiting for ODF operator pods..."
+  oc rollout status deployment/odf-operator-controller-manager -n $NS_ODF --timeout=15m || true
 
-# Create StorageSystem → StorageCluster
-oc apply -f - <<EOF
+  # Create StorageSystem → StorageCluster
+  oc apply -f - <<EOF
 apiVersion: odf.openshift.io/v1alpha1
 kind: StorageSystem
 metadata:
@@ -138,11 +171,13 @@ spec:
   namespace: $NS_ODF
 EOF
 
-echo "Waiting for Ceph cluster to be healthy..."
-oc wait --for=condition=Available --timeout=30m storagecluster/ocs-storagecluster -n $NS_ODF || true
+  echo "Waiting for Ceph cluster to be healthy..."
+  oc wait --for=condition=Available --timeout=30m storagecluster/ocs-storagecluster -n $NS_ODF || true
+fi
 
 echo "=== STEP 4: Install OpenShift Virtualization (CNV) ==="
-oc apply -f - <<EOF
+if confirm "Automatically install OpenShift Virtualization operator?"; then
+  oc apply -f - <<EOF
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
@@ -165,10 +200,10 @@ spec:
   sourceNamespace: openshift-marketplace
 EOF
 
-echo "Waiting for HCO to be ready..."
-oc rollout status deployment/virt-operator -n $NS_CNV --timeout=15m || true
+  echo "Waiting for HCO to be ready..."
+  oc rollout status deployment/virt-operator -n $NS_CNV --timeout=15m || true
 
-oc apply -f - <<EOF
+  oc apply -f - <<EOF
 apiVersion: hco.kubevirt.io/v1beta1
 kind: HyperConverged
 metadata:
@@ -177,7 +212,8 @@ metadata:
 spec: {}
 EOF
 
-oc wait hyperconverged/kubevirt-hyperconverged -n $NS_CNV --for=condition=Available --timeout=20m || true
+  oc wait hyperconverged/kubevirt-hyperconverged -n $NS_CNV --for=condition=Available --timeout=20m || true
+fi
 
 echo "=== STEP 5: Ensure wrapper storageclasses exist (odf-rbd, odf-cephfs) ==="
 oc apply -f cluster/storageclasses/odf-rbd.yaml || true
