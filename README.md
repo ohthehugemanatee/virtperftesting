@@ -30,6 +30,14 @@ Alternatively, you can install a fresh ARO cluster and follow the instructions f
 
 ## Running the Tests
 
+The primary entrance point is the Makefile, which takes optional arguments:
+
+- PROFILE:  Adjusts cluster tuning.
+  * **ootb**: default tuning. (default)
+  * **strict**: PAO/kubelet config for CPU pinning, hugepages, NUMA alignment per Red Hat perf tuning guidance.
+- FAMILY: Which Azure VM family to test: v5 (default) or v6
+- KUBECONFIG: a kubeconfig file for your cluster. Default is to use the current context in your system kubeconfig. 
+
 You can run the suite three ways:
 
 ### 1. Locally (from your laptop/home Linux machine)
@@ -128,7 +136,7 @@ If you provisioned a brand-new ARO/OpenShift cluster, you can take it from
 make prep
 ````
 
-This does the following:
+This requires only `oc` access and `jq`, and does the following:
 
 * Upgrades the cluster to a target OCP version (configurable via `$TARGET_OCP_VERSION`).
 * Ensures a minimum worker pool size of the desired VM SKU (defaults to 6 × D96s v5).
@@ -157,10 +165,6 @@ make PROFILE=strict FAMILY=v6 run
 ## Notes
 
 * Tests target **96 vCPU workers** only.
-* Profiles:
-
-  * **ootb**: default tuning.
-  * **strict**: PAO/kubelet config for CPU pinning, hugepages, NUMA alignment.
 * ODF throughput expectations differ between SATA-backed (`v5`) and NVMe-enabled (`v6`) families.
 * For sizing ODF disk pools, see `sizing/odf_sizer.py`.
 

@@ -1,16 +1,20 @@
 PROFILE ?= ootb        # ootb | strict
 FAMILY  ?= v5          # v5 | v6
 SUITE   ?= aro-$(PROFILE)-d96s-$(FAMILY).yaml
+KUBECONFIG ?= $$KUBECONFIG
 
 .PHONY: run ns-prepare strict ootb seller-pack prep test-prep
 
+
 run: ns-prepare
-	@echo "Running suite $(SUITE)"
+	# Run benchmark-runner workloads against a live OpenShift/ARO cluster
 	podman run --rm \
 	  -v $(PWD)/suites:/suites \
 	  -v $(PWD)/results:/results \
+	  -v $(KUBECONFIG):/root/.kube/config:ro \
 	  quay.io/redhat-performance/benchmark-runner:latest \
-	  --config /suites/$(SUITE)
+	  --config /suites/aro-$(PROFILE)-d96s-$(FAMILY).yaml \
+	  --kubeconfig /root/.kube/config
 
 ns-prepare:
 	./scripts/prepare-namespace.sh
