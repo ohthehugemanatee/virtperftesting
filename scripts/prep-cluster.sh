@@ -23,15 +23,23 @@ echo "=== STEP 1: Upgrade cluster to target version $TARGET_OCP_VERSION ==="
 oc adm upgrade --to="$TARGET_OCP_VERSION" || true
 
 echo "=== STEP 2: Scale worker nodes to $WORKER_COUNT of $WORKER_MACHINESET ==="
-# Find a machineset that matches desired SKU
-MS=$(oc get machinesets -n openshift-machine-api -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep "$WORKER_MACHINESET" || true)
+# Ensure jq is available
+command -v jq >/dev/null 2>&1 || { echo >&2 "ERROR: jq is required"; exit 1; }
+
+MS=$(oc get machinesets -n openshift-machine-api -o json \
+  | jq -r --arg sku "$WORKER_MACHINESET" '
+      .items[]
+      | select(.spec.template.spec.providerSpec.value.vmSize == $sku)
+      | .metadata.name')
+
 if [[ -z "$MS" ]]; then
-  echo "ERROR: No MachineSet matching $WORKER_MACHINESET found. Check oc get machinesets -n openshift-machine-api"
+  echo "ERROR: No MachineSet found for SKU $WORKER_MACHINESET"
   exit 1
 fi
+
 oc scale machineset "$MS" -n openshift-machine-api --replicas="$WORKER_COUNT"
-echo "Waiting for workers to be Ready..."
-oc wait node --for=condition=Ready --timeout=30m -l "node.kubernetes.io/instance-type=$WORKER_MACHINESET"
+oc wait node --for=condition=Ready --timeout=30m \
+  -l "node.kubernetes.io/instance-type=$WORKER_MACHINESET"
 
 if [[ "$USE_ODF_POOL" == "true" ]]; then
   echo "=== STEP 2b: Ensure ODF node pool ($ODF_MACHINESET, $ODF_NODE_COUNT nodes) ==="
