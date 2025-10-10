@@ -249,6 +249,15 @@ echo "=== STEP 5: Ensure wrapper storageclasses exist (odf-rbd, odf-cephfs) ==="
 oc apply -f cluster/storageclasses/odf-rbd.yaml || true
 oc apply -f cluster/storageclasses/odf-cephfs.yaml || true
 
+echo "=== STEP 6: Install benchmark-operator ==="
+TMPDIR=$(mktemp -d --suffix=benchmark-operator)
+cd $TMPDIR
+git clone https://github.com/cloud-bulldozer/benchmark-operator.git 
+cd benchmark-operator
+make deploy
+rm -rf $TMPDIR
+
+
 echo "=== PREP COMPLETE ==="
 echo "You can now run perf tests, e.g.:"
 echo "  make PROFILE=ootb FAMILY=v5 run"
