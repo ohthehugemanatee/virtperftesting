@@ -1,0 +1,27 @@
+apiVersion: ripsaw.cloudbulldozer.io/v1alpha1
+kind: Benchmark
+metadata:
+  name: uperf-strict
+  namespace: benchmark-operator
+spec:
+  workload:
+    name: uperf
+    args:
+      serviceip: false
+      pin: true
+      test_types:
+        - stream
+        - rr
+      protos:
+        - tcp
+        - udp
+      sizes:
+        - 64
+        - 1024
+      runtime: 120
+      samples: 5
+      client_node_selector:
+        node-role.kubernetes.io/worker: ""
+      server_node_selector:
+        node-role.kubernetes.io/worker: ""
+      hostnetwork: false

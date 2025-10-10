@@ -1,0 +1,17 @@
+apiVersion: ripsaw.cloudbulldozer.io/v1alpha1
+kind: Benchmark
+metadata:
+  name: hammerdb-strict
+  namespace: benchmark-operator
+spec:
+  workload:
+    name: hammerdb
+    args:
+      workload: tpcc
+      dbtype: postgresql
+      num_workers: 16
+      scale_factor: 50
+      transactions: 50000
+      threads: 8
+      storageclass: odf-rbd
+      cleanup: true

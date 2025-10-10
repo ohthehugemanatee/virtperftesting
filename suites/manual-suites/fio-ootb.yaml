@@ -1,0 +1,20 @@
+apiVersion: ripsaw.cloudbulldozer.io/v1alpha1
+kind: Benchmark
+metadata:
+  name: fio-ootb
+  namespace: benchmark-operator
+spec:
+  workload:
+    name: fio_distributed
+    args:
+      job_name: readwrite
+      storageclass: odf-rbd
+      blocksize: 4KiB
+      iodepth: 16
+      numjobs: 2
+      rw: randrw
+      runtime: 60
+      samples: 1
+      servers: 2
+      filesizes:
+        - 1GiB

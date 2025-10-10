@@ -1,0 +1,24 @@
+apiVersion: ripsaw.cloudbulldozer.io/v1alpha1
+kind: Benchmark
+metadata:
+  name: uperf-ootb
+  namespace: benchmark-operator
+spec:
+  workload:
+    name: uperf
+    args:
+      serviceip: false
+      pin: true
+      test_types:
+        - stream
+      protos:
+        - tcp
+      sizes:
+        - 64
+      runtime: 60
+      samples: 3
+      client_node_selector:
+        node-role.kubernetes.io/worker: ""
+      server_node_selector:
+        node-role.kubernetes.io/worker: ""
+      hostnetwork: false
