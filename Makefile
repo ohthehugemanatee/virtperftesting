@@ -2,9 +2,9 @@ PROFILE ?= ootb        # ootb | strict
 FAMILY  ?= v5          # v5 | v6
 SUITE   ?= aro-$(PROFILE)-d96s-$(FAMILY).yaml
 
-.PHONY: run prepare strict ootb seller-pack
+.PHONY: run ns-prepare strict ootb seller-pack prep test-prep
 
-run: prepare
+run: ns-prepare
 	@echo "Running suite $(SUITE)"
 	podman run --rm \
 	  -v $(PWD)/suites:/suites \
@@ -12,7 +12,7 @@ run: prepare
 	  quay.io/redhat-performance/benchmark-runner:latest \
 	  --config /suites/$(SUITE)
 
-prepare:
+ns-prepare:
 	./scripts/prepare-namespace.sh
 	oc apply -f https://raw.githubusercontent.com/cloud-bulldozer/benchmark-operator/master/deploy/operator.yaml
 
