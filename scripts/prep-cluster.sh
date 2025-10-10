@@ -21,6 +21,7 @@ ASK_ALL="${ASK_ALL:-false}"
 confirm() {
   local prompt="$1"
   if [ "$ASK_ALL" = true ]; then
+    echo "$prompt [y/n/a/q]: y"
     return 0
   fi
 
@@ -36,6 +37,11 @@ confirm() {
   done
 }
 
+sanitize_sku() {
+  echo "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed 's/_/-/g'
+}
 
 create_machineset_for_sku () {
   local sku="$1"
@@ -53,12 +59,14 @@ create_machineset_for_sku () {
   fi
 
   # Dump template, change name and vmSize
-  newname="${template_ms%-*}-${sku,,}"
+  safe_sku=$(sanitize_sku "$sku")
+  newname="${template_ms%-*}-${safe_sku}"
+
   oc get machineset "$template_ms" -n $ns -o json \
     | jq --arg name "$newname" --arg sku "$sku" '
-        .metadata.name = $name
-        | .spec.selector.matchLabels."machine.openshift.io/cluster-api-machineset" = $name
-        | .spec.template.metadata.labels."machine.openshift.io/cluster-api-machineset" = $name
+        .metadata.name = $newname
+        | .spec.selector.matchLabels."machine.openshift.io/cluster-api-machineset" = $newname
+        | .spec.template.metadata.labels."machine.openshift.io/cluster-api-machineset" = $newname
         | .spec.template.spec.providerSpec.value.vmSize = $sku
         | .spec.replicas = 0
       ' \
@@ -83,24 +91,29 @@ echo "=== STEP 2: Scale worker nodes to $COMPUTE_COUNT of $COMPUTE_MACHINESET ==
 # Ensure jq is available
 command -v jq >/dev/null 2>&1 || { echo >&2 "ERROR: jq is required"; exit 1; }
 
-MS=$(oc get machinesets -n openshift-machine-api -o json \
+COMPUTE_MS=$(oc get machinesets -n openshift-machine-api -o json \
   | jq -r --arg sku "$COMPUTE_MACHINESET" '
       .items[]
       | select(.spec.template.spec.providerSpec.value.vmSize == $sku)
       | .metadata.name')
 
-if [[ -z "$MS" ]]; then
+if [[ -z "$COMPUTE_MS" ]]; then
   if confirm "Automatically create machineset for $COMPUTE_COUNT VMs with SKU $COMPUTE_MACHINESET ?"; then
     MS=$(create_machineset_for_sku "$COMPUTE_MACHINESET" "$COMPUTE_COUNT")
   fi
 else
-  if confirm "Automatically scale machineset $MS to $COMPUTE_COUNT?"; then
-    oc scale machineset "$MS" -n openshift-machine-api --replicas="$COMPUTE_COUNT"
+  if confirm "Automatically scale machineset $COMPUTE_MS to $COMPUTE_COUNT?"; then
+    oc scale machineset "$COMPUTE_MS" -n openshift-machine-api --replicas="$COMPUTE_COUNT"
   fi
 fi
 
-oc wait node --for=condition=Ready --timeout=30m \
-  -l "node.kubernetes.io/instance-type=$COMPUTE_MACHINESET"
+  echo "Waiting for compute machineset $COMPUTE_MS to scale to $COMPUTE_COUNT..."
+  if ! oc wait --for=jsonpath='{.status.readyReplicas}'="$COMPUTE_COUNT" \
+       machineset "$COMPUTE_MS" -n openshift-machine-api --timeout=15m; then
+    echo "ERROR: ODF machineset $COMPUTE_MS did not reach $COMPUTE_COUNT ready replicas."
+    echo "Check cluster quota and node creation events: oc describe machineset/$COMPUTE_MS -n openshift-machine-api"
+    exit 1
+  fi
 
 if [[ "$USE_ODF_POOL" == "true" ]]; then
   echo "=== STEP 2b: Ensure ODF node pool ($ODF_MACHINESET, $ODF_NODE_COUNT nodes) ==="
@@ -112,17 +125,23 @@ if [[ "$USE_ODF_POOL" == "true" ]]; then
   
   if [[ -z "$ODF_MS" ]]; then
 
-  if confirm "Automatically create machineset for $ODF_COUNT VMs with SKU $ODF_MACHINESET ?"; then
-    ODF_MS=$(create_machineset_for_sku "$ODF_MACHINESET" "$ODF_COUNT")
+  if confirm "Automatically create machineset for $ODF_NODE_COUNT VMs with SKU $ODF_MACHINESET ?"; then
+    ODF_MS=$(create_machineset_for_sku "$ODF_MACHINESET" "$ODF_NODE_COUNT")
   fi
   else
-    if confirm "Automatically scale machineset $ODF_MS to $ODF_COUNT ?"; then
-      oc scale machineset "$MS" -n openshift-machine-api --replicas="$ODF_COUNT"
+    if confirm "Automatically scale machineset $ODF_MS to $ODF_NODE_COUNT ?"; then
+      oc scale machineset "$ODF_MS" -n openshift-machine-api --replicas="$ODF_NODE_COUNT"
     fi
   fi
-  
-  oc wait node --for=condition=Ready --timeout=30m \
-    -l "node.kubernetes.io/instance-type=$ODF_MACHINESET"
+
+  echo "Waiting for ODF machineset $ODF_MS to scale to $ODF_NODE_COUNT..."
+  if ! oc wait --for=jsonpath='{.status.readyReplicas}'="$ODF_NODE_COUNT" \
+       machineset "$ODF_MS" -n openshift-machine-api --timeout=15m; then
+    echo "ERROR: ODF machineset $ODF_MS did not reach $ODF_NODE_COUNT ready replicas."
+    echo "Check cluster quota and node creation events: oc describe machineset/$ODF_MS -n openshift-machine-api"
+    exit 1
+  fi
+
     # Label and taint nodes for ODF
   for n in $(oc get nodes -l node.kubernetes.io/instance-type=$ODF_MACHINESET -o name); do
     oc label $n odf=true --overwrite
