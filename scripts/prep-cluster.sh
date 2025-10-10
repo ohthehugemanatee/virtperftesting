@@ -185,7 +185,7 @@ metadata:
   name: ocs-storagecluster-storagesystem
   namespace: $NS_ODF
 spec:
-  kind: storagecluster
+  kind: storagecluster.ocs.openshift.io/v1
   name: ocs-storagecluster
   namespace: $NS_ODF
 EOF
@@ -197,6 +197,11 @@ fi
 echo "=== STEP 4: Install OpenShift Virtualization (CNV) ==="
 if confirm "Automatically install OpenShift Virtualization operator?"; then
   oc apply -f - <<EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: $NS_CNV
+---
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
 metadata:
@@ -219,8 +224,13 @@ spec:
   sourceNamespace: openshift-marketplace
 EOF
 
-  echo "Waiting for HCO to be ready..."
-  oc rollout status deployment/virt-operator -n $NS_CNV --timeout=15m || true
+  csv=$(oc get subscription kubevirt-hyperconverged -n $NS_CNV -o jsonpath='{.status.installedCSV}')
+  echo "Waiting for CSV $csv in $NS_CNV..."
+  until [[ "$(oc get csv "$csv" -n $NS_CNV -o jsonpath='{.status.phase}' 2>/dev/null)" == "Succeeded" ]]; do
+    echo "  still waiting..."
+    sleep 20
+  done
+  echo "CSV $csv is Succeeded."
 
   oc apply -f - <<EOF
 apiVersion: hco.kubevirt.io/v1beta1
@@ -233,6 +243,7 @@ EOF
 
   oc wait hyperconverged/kubevirt-hyperconverged -n $NS_CNV --for=condition=Available --timeout=20m || true
 fi
+
 
 echo "=== STEP 5: Ensure wrapper storageclasses exist (odf-rbd, odf-cephfs) ==="
 oc apply -f cluster/storageclasses/odf-rbd.yaml || true
