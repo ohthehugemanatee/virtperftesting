@@ -5,6 +5,12 @@ set -euo pipefail
 TARGET_OCP_VERSION="${TARGET_OCP_VERSION:-4.18.25}"   # set desired OCP version
 WORKER_MACHINESET="${WORKER_MACHINESET:-Standard_D96s_v5}" # or Standard_D96s_v6
 WORKER_COUNT="${WORKER_COUNT:-6}"                    # number of workers
+
+# Optional dedicated ODF pool
+USE_ODF_POOL="${USE_ODF_POOL:-true}"    # true/false
+ODF_MACHINESET="${ODF_MACHINESET:-Standard_D16s_v5}" # smaller/disk-heavy SKU
+ODF_NODE_COUNT="${ODF_NODE_COUNT:-3}"
+
 ODF_CHANNEL="${ODF_CHANNEL:-stable-4.18}"
 CNV_CHANNEL="${CNV_CHANNEL:-stable}"
 NS_ODF="openshift-storage"
@@ -15,7 +21,6 @@ oc whoami >/dev/null
 
 echo "=== STEP 1: Upgrade cluster to target version $TARGET_OCP_VERSION ==="
 oc adm upgrade --to="$TARGET_OCP_VERSION" || true
-echo "Check upgrade status with: oc get clusterversion"
 
 echo "=== STEP 2: Scale worker nodes to $WORKER_COUNT of $WORKER_MACHINESET ==="
 # Find a machineset that matches desired SKU
@@ -28,7 +33,23 @@ oc scale machineset "$MS" -n openshift-machine-api --replicas="$WORKER_COUNT"
 echo "Waiting for workers to be Ready..."
 oc wait node --for=condition=Ready --timeout=30m -l "node.kubernetes.io/instance-type=$WORKER_MACHINESET"
 
-echo "=== STEP 3: Install ODF Operator and create StorageSystem ==="
+if [[ "$USE_ODF_POOL" == "true" ]]; then
+  echo "=== STEP 2b: Ensure ODF node pool ($ODF_MACHINESET, $ODF_NODE_COUNT nodes) ==="
+  ODF_MS=$(oc get machinesets -n openshift-machine-api -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep "$ODF_MACHINESET" || true)
+  if [[ -z "$ODF_MS" ]]; then
+    echo "WARNING: No MachineSet found for $ODF_MACHINESET. You may need to create one manually."
+  else
+    oc scale machineset "$ODF_MS" -n openshift-machine-api --replicas="$ODF_NODE_COUNT"
+    oc wait node --for=condition=Ready --timeout=30m -l "node.kubernetes.io/instance-type=$ODF_MACHINESET"
+    # Label and taint nodes for ODF
+    for n in $(oc get nodes -l node.kubernetes.io/instance-type=$ODF_MACHINESET -o name); do
+      oc label $n odf=true --overwrite
+      oc adm taint nodes $n dedicated=odf:NoSchedule --overwrite || true
+    done
+  fi
+fi
+
+echo "=== STEP 3: Install ODF Operator and StorageSystem ==="
 oc apply -f - <<EOF
 apiVersion: operators.coreos.com/v1
 kind: OperatorGroup
