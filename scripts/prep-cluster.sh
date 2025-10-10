@@ -110,7 +110,7 @@ fi
   echo "Waiting for compute machineset $COMPUTE_MS to scale to $COMPUTE_COUNT..."
   if ! oc wait --for=jsonpath='{.status.readyReplicas}'="$COMPUTE_COUNT" \
        machineset "$COMPUTE_MS" -n openshift-machine-api --timeout=15m; then
-    echo "ERROR: ODF machineset $COMPUTE_MS did not reach $COMPUTE_COUNT ready replicas."
+    echo "ERROR: Compute machineset $COMPUTE_MS did not reach $COMPUTE_COUNT ready replicas."
     echo "Check cluster quota and node creation events: oc describe machineset/$COMPUTE_MS -n openshift-machine-api"
     exit 1
   fi
