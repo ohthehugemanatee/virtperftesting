@@ -18,7 +18,6 @@ run: ns-prepare
 
 ns-prepare:
 	./scripts/prepare-namespace.sh
-	oc apply -f https://raw.githubusercontent.com/cloud-bulldozer/benchmark-operator/master/deploy/operator.yaml
 
 strict:
 	./scripts/prepare-strict.sh
