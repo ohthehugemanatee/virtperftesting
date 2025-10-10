@@ -3,8 +3,8 @@ set -euo pipefail
 
 # === CONFIG ===
 TARGET_OCP_VERSION="${TARGET_OCP_VERSION:-4.18.25}"   # set desired OCP version
-WORKER_MACHINESET="${WORKER_MACHINESET:-Standard_D96s_v5}" # or Standard_D96s_v6
-WORKER_COUNT="${WORKER_COUNT:-6}"                    # number of workers
+COMPUTE_MACHINESET="${COMPUTE_MACHINESET:-Standard_D96s_v5}" # or Standard_D96s_v6
+COMPUTE_COUNT="${COMPUTE_COUNT:-6}"                    # number of workers
 
 # Optional dedicated ODF pool
 USE_ODF_POOL="${USE_ODF_POOL:-true}"    # true/false
@@ -22,24 +22,24 @@ oc whoami >/dev/null
 echo "=== STEP 1: Upgrade cluster to target version $TARGET_OCP_VERSION ==="
 oc adm upgrade --to="$TARGET_OCP_VERSION" || true
 
-echo "=== STEP 2: Scale worker nodes to $WORKER_COUNT of $WORKER_MACHINESET ==="
+echo "=== STEP 2: Scale worker nodes to $COMPUTE_COUNT of $COMPUTE_MACHINESET ==="
 # Ensure jq is available
 command -v jq >/dev/null 2>&1 || { echo >&2 "ERROR: jq is required"; exit 1; }
 
 MS=$(oc get machinesets -n openshift-machine-api -o json \
-  | jq -r --arg sku "$WORKER_MACHINESET" '
+  | jq -r --arg sku "$COMPUTE_MACHINESET" '
       .items[]
       | select(.spec.template.spec.providerSpec.value.vmSize == $sku)
       | .metadata.name')
 
 if [[ -z "$MS" ]]; then
-  echo "ERROR: No MachineSet found for SKU $WORKER_MACHINESET"
+  echo "ERROR: No MachineSet found for SKU $COMPUTE_MACHINESET"
   exit 1
 fi
 
-oc scale machineset "$MS" -n openshift-machine-api --replicas="$WORKER_COUNT"
+oc scale machineset "$MS" -n openshift-machine-api --replicas="$COMPUTE_COUNT"
 oc wait node --for=condition=Ready --timeout=30m \
-  -l "node.kubernetes.io/instance-type=$WORKER_MACHINESET"
+  -l "node.kubernetes.io/instance-type=$COMPUTE_MACHINESET"
 
 if [[ "$USE_ODF_POOL" == "true" ]]; then
   echo "=== STEP 2b: Ensure ODF node pool ($ODF_MACHINESET, $ODF_NODE_COUNT nodes) ==="
