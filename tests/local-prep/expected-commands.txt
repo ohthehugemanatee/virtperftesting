@@ -1,0 +1,14 @@
+oc whoami
+oc adm upgrade --to=4.18.25
+oc scale machineset perftest1-worker-az1 -n openshift-machine-api --replicas=3
+oc wait node --for=condition=Ready --timeout=30m -l node.kubernetes.io/instance-type=Standard_D96s_v5
+oc apply -f -
+oc rollout status deployment/odf-operator-controller-manager -n openshift-storage --timeout=15m
+oc apply -f -
+oc wait --for=condition=Available --timeout=30m storagecluster/ocs-storagecluster -n openshift-storage
+oc apply -f -
+oc rollout status deployment/virt-operator -n openshift-cnv --timeout=15m
+oc apply -f -
+oc wait hyperconverged/kubevirt-hyperconverged -n openshift-cnv --for=condition=Available --timeout=20m
+oc apply -f cluster/storageclasses/odf-rbd.yaml
+oc apply -f cluster/storageclasses/odf-cephfs.yaml

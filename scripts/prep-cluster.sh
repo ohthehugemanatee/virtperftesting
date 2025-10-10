@@ -16,7 +16,7 @@ CNV_CHANNEL="${CNV_CHANNEL:-stable}"
 NS_ODF="openshift-storage"
 NS_CNV="openshift-cnv"
 
-ASK_ALL=false
+ASK_ALL="${ASK_ALL:-false}"
 
 confirm() {
   local prompt="$1"

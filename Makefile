@@ -28,3 +28,7 @@ seller-pack:
 prep:
 	@echo "Preparing fresh cluster for perf tests... This can take up to 30 minutes. Go have a sandwich."
 	./scripts/prep-cluster.sh
+
+test-prep:
+	@echo "Running local-only tests for prep-cluster.sh..."
+	./tests/local-prep/run-tests.sh
