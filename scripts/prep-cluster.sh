@@ -85,6 +85,7 @@ oc whoami >/dev/null
 echo "=== STEP 1: Upgrade cluster to target version $TARGET_OCP_VERSION ==="
 if confirm "Automatically upgrade cluster to target version $TARGET_OCP_VERSION ?"; then
   oc adm upgrade --to="$TARGET_OCP_VERSION" || true
+  echo "You may additionally need to run 'az aro update -n perftest1 -g arovert --upgradeable-to <version>'. Check your cloud console for details."
 fi
 
 echo "=== STEP 2: Scale worker nodes to $COMPUTE_COUNT of $COMPUTE_MACHINESET ==="
