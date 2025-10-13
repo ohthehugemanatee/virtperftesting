@@ -12,9 +12,9 @@ run: ns-prepare
 	  -v $(PWD)/suites:/suites \
 	  -v $(PWD)/results:/results \
 	  -v $(KUBECONFIG):/root/.kube/config:ro \
-	  quay.io/benchmark-runner/benchmark-runner:latest \
-	  --config /suites/aro-$(PROFILE)-d96s-$(FAMILY).yaml \
-	  --kubeconfig /root/.kube/config
+    -e TEST_CONFIG_FILE=/suites/aro-$(PROFILE)-d96s-$(FAMILY).yaml \
+    -e KUBECONFIG=/root/.kube/config \
+	  quay.io/benchmark-runner/benchmark-runner:latest 
 
 ns-prepare:
 	./scripts/prepare-namespace.sh
