@@ -132,7 +132,7 @@ if [[ "$USE_ODF_POOL" == "true" ]]; then
   ODF_MACHINESET_NAME=$(ensure_scaled_machineset_for_sku "$ODF_MACHINESET" "$ODF_NODE_COUNT")
 
   echo "Waiting for compute machineset $ODF_MACHINESET_NAME to reach $ODF_NODE_COUNT ready replicas..."
-  if !oc wait --for=jsonpath='{.status.readyReplicas}'="$ODF_NODE_COUNT" \
+  if ! oc wait --for=jsonpath='{.status.readyReplicas}'="$ODF_NODE_COUNT" \
     machineset "$ODF_MACHINESET_NAME" -n openshift-machine-api --timeout=15m; then
     echo "ERROR: Compute machineset $ODF_MACHINESET_NAME did not reach $ODF_NODE_COUNT ready replicas."
     echo "Check cluster quota and node creation events: oc describe machineset/$ODF_MACHINESET_NAME -n openshift-machine-api"
