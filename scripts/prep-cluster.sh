@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -xeuo pipefail
+set -euo pipefail
 
 # === CONFIG ===
 TARGET_OCP_VERSION="${TARGET_OCP_VERSION:-4.18.25}"   # set desired OCP version
@@ -147,7 +147,7 @@ if [[ "$USE_ODF_POOL" == "true" ]]; then
   done
 fi
 
-oc create namespace $NS_ODF
+oc create namespace $NS_ODF || true
 
 echo "=== STEP 3: Install ODF Operator and StorageSystem ==="
 if confirm "Automatically install ODF Operator and StorageSystem?"; then
@@ -195,7 +195,7 @@ EOF
 fi
 
 echo "=== STEP 4: Install OpenShift Virtualization (CNV) ==="
-oc create namespace $NS_CNV
+oc create namespace $NS_CNV || true
 if confirm "Automatically install OpenShift Virtualization operator?"; then
   oc apply -f - <<EOF
 apiVersion: v1
