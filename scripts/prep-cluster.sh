@@ -49,8 +49,6 @@ create_machineset_for_sku () {
   local ns="openshift-machine-api"
   local template_ms
 
-  echo "Creating MachineSet for SKU $sku..."
-
   # Pick the first existing worker machineset as template
   template_ms=$(oc get machinesets -n $ns -o jsonpath='{.items[0].metadata.name}')
   if [[ -z "$template_ms" ]]; then
@@ -63,18 +61,14 @@ create_machineset_for_sku () {
   newname="${template_ms%-*}-${safe_sku}"
 
   oc get machineset "$template_ms" -n $ns -o json \
-    | jq --arg name "$newname" --arg sku "$sku" '
+    | jq --arg newname "$newname" --arg sku "$sku" '
         .metadata.name = $newname
         | .spec.selector.matchLabels."machine.openshift.io/cluster-api-machineset" = $newname
         | .spec.template.metadata.labels."machine.openshift.io/cluster-api-machineset" = $newname
         | .spec.template.spec.providerSpec.value.vmSize = $sku
         | .spec.replicas = 0
       ' \
-    | oc apply -n $ns -f -
-
-  echo "New MachineSet $newname created for SKU $sku."
-  echo "Scaling to $replicas replicas..."
-  oc scale machineset "$newname" -n $ns --replicas="$replicas"
+    | oc apply --quiet -n $ns -f -
 
   echo "$newname"
 }
@@ -100,21 +94,25 @@ COMPUTE_MS=$(oc get machinesets -n openshift-machine-api -o json \
 
 if [[ -z "$COMPUTE_MS" ]]; then
   if confirm "Automatically create machineset for $COMPUTE_COUNT VMs with SKU $COMPUTE_MACHINESET ?"; then
-    MS=$(create_machineset_for_sku "$COMPUTE_MACHINESET" "$COMPUTE_COUNT")
-  fi
-else
-  if confirm "Automatically scale machineset $COMPUTE_MS to $COMPUTE_COUNT?"; then
-    oc scale machineset "$COMPUTE_MS" -n openshift-machine-api --replicas="$COMPUTE_COUNT"
+    COMPUTE_MS=$(create_machineset_for_sku "$COMPUTE_MACHINESET" "$COMPUTE_COUNT")
+  else
+    echo "Cannot find candidate machineset with SKU $COMPUTE_MACHINESET , cannot create one."
+    exit 1
   fi
 fi
 
-  echo "Waiting for compute machineset $COMPUTE_MS to scale to $COMPUTE_COUNT..."
-  if ! oc wait --for=jsonpath='{.status.readyReplicas}'="$COMPUTE_COUNT" \
-       machineset "$COMPUTE_MS" -n openshift-machine-api --timeout=15m; then
-    echo "ERROR: Compute machineset $COMPUTE_MS did not reach $COMPUTE_COUNT ready replicas."
-    echo "Check cluster quota and node creation events: oc describe machineset/$COMPUTE_MS -n openshift-machine-api"
-    exit 1
-  fi
+echo "Found machineset $COMPUTE_MS"
+if confirm "Automatically scale machineset $COMPUTE_MS to $COMPUTE_COUNT?"; then
+  oc scale machineset "$COMPUTE_MS" -n openshift-machine-api --replicas="$COMPUTE_COUNT"
+fi
+
+echo "Waiting for compute machineset $COMPUTE_MS to reach $COMPUTE_COUNT ready replicas..."
+if ! oc wait --for=jsonpath='{.status.readyReplicas}'="$COMPUTE_COUNT" \
+     machineset "$COMPUTE_MS" -n openshift-machine-api --timeout=15m; then
+  echo "ERROR: Compute machineset $COMPUTE_MS did not reach $COMPUTE_COUNT ready replicas."
+  echo "Check cluster quota and node creation events: oc describe machineset/$COMPUTE_MS -n openshift-machine-api"
+  exit 1
+fi
 
 if [[ "$USE_ODF_POOL" == "true" ]]; then
   echo "=== STEP 2b: Ensure ODF node pool ($ODF_MACHINESET, $ODF_NODE_COUNT nodes) ==="
@@ -125,17 +123,18 @@ if [[ "$USE_ODF_POOL" == "true" ]]; then
         | .metadata.name')
   
   if [[ -z "$ODF_MS" ]]; then
-
-  if confirm "Automatically create machineset for $ODF_NODE_COUNT VMs with SKU $ODF_MACHINESET ?"; then
-    ODF_MS=$(create_machineset_for_sku "$ODF_MACHINESET" "$ODF_NODE_COUNT")
-  fi
-  else
-    if confirm "Automatically scale machineset $ODF_MS to $ODF_NODE_COUNT ?"; then
-      oc scale machineset "$ODF_MS" -n openshift-machine-api --replicas="$ODF_NODE_COUNT"
+    if confirm "Automatically create machineset for $ODF_NODE_COUNT VMs with SKU $ODF_MACHINESET ?"; then
+      ODF_MS=$(create_machineset_for_sku "$ODF_MACHINESET" "$ODF_NODE_COUNT")
+    else
+      echo "Cannot find candidate ODF machineset with SKU $ODF_MACHINESET , cannot create one."
+      exit 1
     fi
   fi
+  if confirm "Automatically scale machineset $ODF_MS to $ODF_NODE_COUNT ?"; then
+    oc scale machineset "$ODF_MS" -n openshift-machine-api --replicas="$ODF_NODE_COUNT"
+  fi
 
-  echo "Waiting for ODF machineset $ODF_MS to scale to $ODF_NODE_COUNT..."
+  echo "Waiting for ODF machineset $ODF_MS to reach $ODF_NODE_COUNT ready replicas..."
   if ! oc wait --for=jsonpath='{.status.readyReplicas}'="$ODF_NODE_COUNT" \
        machineset "$ODF_MS" -n openshift-machine-api --timeout=15m; then
     echo "ERROR: ODF machineset $ODF_MS did not reach $ODF_NODE_COUNT ready replicas."
