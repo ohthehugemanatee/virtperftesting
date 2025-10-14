@@ -45,6 +45,7 @@ sanitize_sku() {
 
 create_machineset_for_sku () {
   local sku="$1"
+  local safe_sku=$(sanitize_sku "$sku")
   local replicas="$2"
   local ns="openshift-machine-api"
   local template_ms
@@ -52,25 +53,65 @@ create_machineset_for_sku () {
   # Pick the first existing worker machineset as template
   template_ms=$(oc get machinesets -n $ns -o jsonpath='{.items[0].metadata.name}')
   if [[ -z "$template_ms" ]]; then
-    echo "ERROR: No template MachineSet found."
+    echo "ERROR: No existing MachineSet found. Please create one manually."
     exit 1
   fi
 
   # Dump template, change name and vmSize
-  safe_sku=$(sanitize_sku "$sku")
-  newname="${template_ms%-*}-${safe_sku}"
+  local newname="${template_ms%-*}-${safe_sku}"
 
   oc get machineset "$template_ms" -n $ns -o json \
-    | jq --arg newname "$newname" --arg sku "$sku" '
+    | jq --arg newname "$newname" --arg sku "$sku" --arg replicas $replicas'
         .metadata.name = $newname
         | .spec.selector.matchLabels."machine.openshift.io/cluster-api-machineset" = $newname
         | .spec.template.metadata.labels."machine.openshift.io/cluster-api-machineset" = $newname
         | .spec.template.spec.providerSpec.value.vmSize = $sku
-        | .spec.replicas = 0
+        | .spec.replicas = $replicas 
       ' \
     | oc apply --quiet -n $ns -f -
 
   echo "$newname"
+}
+
+ensure_scaled_machineset_for_sku() {
+  local sku="$1"
+  local replicas="$2"
+  local ns="openshift-machine-api"
+  local ms
+  
+  # Ensure jq is available
+  command -v jq >/dev/null 2>&1 || { echo >&2 "ERROR: jq is required"; exit 1; }
+
+  # look for an existing machineset
+  ms=$(oc get machinesets -n openshift-machine-api -o json \
+    | jq -r --arg sku "$sku" '
+        .items[0]
+        | select(.spec.template.spec.providerSpec.value.vmSize == $sku)
+        | .metadata.name')
+
+  if [[ -z "$ms" ]]; then
+    echo "Could not find an existing machineset with SKU $sku"
+    if confirm "Automatically create machineset for $replicas VMs with SKU $sku ?"; then
+      ms=$(create_machineset_for_sku "$sku" "$replicas")
+    else
+      echo "Cannot find candidate machineset and cannot create one. Exiting."
+      exit 1
+    fi
+  else
+    echo "Found machineset $ms"
+  fi
+  
+  if confirm "Automatically ensure machineset $ms has $replicas replicas?"; then
+    oc scale machineset "$ms" -n openshift-machine-api --replicas="$replicas"
+  fi
+
+  echo "Waiting for compute machineset $ms to reach $replicas ready replicas..."
+  if ! oc wait --for=jsonpath='{.status.readyReplicas}'="$replicas" \
+       machineset "$ms" -n openshift-machine-api --timeout=15m; then
+    echo "ERROR: Compute machineset $ms did not reach $replicas ready replicas."
+    echo "Check cluster quota and node creation events: oc describe machineset/$ms -n openshift-machine-api"
+    exit 1
+  fi
 }
 
 # Ensure oc is logged in
@@ -83,65 +124,12 @@ if confirm "Automatically upgrade cluster to target version $TARGET_OCP_VERSION 
 fi
 
 echo "=== STEP 2: Scale worker nodes to $COMPUTE_COUNT of $COMPUTE_MACHINESET ==="
-# Ensure jq is available
-command -v jq >/dev/null 2>&1 || { echo >&2 "ERROR: jq is required"; exit 1; }
 
-COMPUTE_MS=$(oc get machinesets -n openshift-machine-api -o json \
-  | jq -r --arg sku "$COMPUTE_MACHINESET" '
-      .items[]
-      | select(.spec.template.spec.providerSpec.value.vmSize == $sku)
-      | .metadata.name')
-
-if [[ -z "$COMPUTE_MS" ]]; then
-  if confirm "Automatically create machineset for $COMPUTE_COUNT VMs with SKU $COMPUTE_MACHINESET ?"; then
-    COMPUTE_MS=$(create_machineset_for_sku "$COMPUTE_MACHINESET" "$COMPUTE_COUNT")
-  else
-    echo "Cannot find candidate machineset with SKU $COMPUTE_MACHINESET , cannot create one."
-    exit 1
-  fi
-fi
-
-echo "Found machineset $COMPUTE_MS"
-if confirm "Automatically scale machineset $COMPUTE_MS to $COMPUTE_COUNT?"; then
-  oc scale machineset "$COMPUTE_MS" -n openshift-machine-api --replicas="$COMPUTE_COUNT"
-fi
-
-echo "Waiting for compute machineset $COMPUTE_MS to reach $COMPUTE_COUNT ready replicas..."
-if ! oc wait --for=jsonpath='{.status.readyReplicas}'="$COMPUTE_COUNT" \
-     machineset "$COMPUTE_MS" -n openshift-machine-api --timeout=15m; then
-  echo "ERROR: Compute machineset $COMPUTE_MS did not reach $COMPUTE_COUNT ready replicas."
-  echo "Check cluster quota and node creation events: oc describe machineset/$COMPUTE_MS -n openshift-machine-api"
-  exit 1
-fi
+ensure_scaled_machineset_for_sku "$COMPUTE_MACHINESET" "$COMPUTE_COUNT"
 
 if [[ "$USE_ODF_POOL" == "true" ]]; then
   echo "=== STEP 2b: Ensure ODF node pool ($ODF_MACHINESET, $ODF_NODE_COUNT nodes) ==="
-  ODF_MS=$(oc get machinesets -n openshift-machine-api -o json \
-    | jq -r --arg sku "$ODF_MACHINESET" '
-        .items[]
-        | select(.spec.template.spec.providerSpec.value.vmSize == $sku)
-        | .metadata.name')
-  
-  if [[ -z "$ODF_MS" ]]; then
-    if confirm "Automatically create machineset for $ODF_NODE_COUNT VMs with SKU $ODF_MACHINESET ?"; then
-      ODF_MS=$(create_machineset_for_sku "$ODF_MACHINESET" "$ODF_NODE_COUNT")
-    else
-      echo "Cannot find candidate ODF machineset with SKU $ODF_MACHINESET , cannot create one."
-      exit 1
-    fi
-  fi
-  if confirm "Automatically scale machineset $ODF_MS to $ODF_NODE_COUNT ?"; then
-    oc scale machineset "$ODF_MS" -n openshift-machine-api --replicas="$ODF_NODE_COUNT"
-  fi
-
-  echo "Waiting for ODF machineset $ODF_MS to reach $ODF_NODE_COUNT ready replicas..."
-  if ! oc wait --for=jsonpath='{.status.readyReplicas}'="$ODF_NODE_COUNT" \
-       machineset "$ODF_MS" -n openshift-machine-api --timeout=15m; then
-    echo "ERROR: ODF machineset $ODF_MS did not reach $ODF_NODE_COUNT ready replicas."
-    echo "Check cluster quota and node creation events: oc describe machineset/$ODF_MS -n openshift-machine-api"
-    exit 1
-  fi
-
+  ensure_scaled_machineset_for_sku "$ODF_MACHINESET" "$ODF_NODE_COUNT"
     # Label and taint nodes for ODF
   for n in $(oc get nodes -l node.kubernetes.io/instance-type=$ODF_MACHINESET -o name); do
     oc label $n odf=true --overwrite
